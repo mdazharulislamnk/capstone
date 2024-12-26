@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prescription Generator</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      margin-top: 20px;
+    }
+    
+    .medicine-row, .test-row, .doze-row {
+      margin-bottom: 5px;
+    }
+    
+    .suggestions-row {
+      margin-bottom: 5px;
+    }
+    
+    .form-section {
+      margin-top: 100px;
+      display: flex;
+      justify-content: space-between;
+      gap: 30px;
+    }
+    
+    .symptom-input-section {
+      width: 25%;
+    }
+    
+    .recommendation-section {
+      width: 70%;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    
+    #recommendation-table th, #recommendation-table td {
+      padding: 12px 20px;
+      text-align: center;
+    }
+    
+    #recommendation-table th {
+      width: 20%; /* Adjust width for each column */
+    }
+    
+    #recommendation-table td {
+      word-wrap: break-word;
+    }
+    
+    #recommendation-table {
+      width: 100%;
+      table-layout: fixed; /* Ensures the table respects column widths */
+    }
+    
+    
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 class="text-center mb-4">Prescription Generator</h2>
+
+    <!-- Patient Information Section -->
+    <div class="mb-4">
+      <h4>Patient Information</h4>
+      <form id="patient-info">
+        <div class="row">
+          <div class="col-md-3">
+            <label for="name" class="form-label">Name:</label>
+            <input type="text" id="name" class="form-control" required>
+          </div>
+          <div class="col-md-2">
+            <label for="age" class="form-label">Age:</label>
+            <input type="number" id="age" class="form-control" required>
+          </div>
+          <div class="col-md-2">
+            <label for="sex" class="form-label">Sex:</label>
+            <select id="sex" class="form-select" required>
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="date" class="form-label">Date:</label>
+            <input type="date" id="date" class="form-control" required>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Symptom Input Section and Recommendation Table Section -->
+<div class="form-section">
+  <!-- Symptom Input Section -->
+  <div class="symptom-input-section">
+    <h4>Input Symptoms</h4>
+    <input type="text" id="symptom-input" class="form-control" placeholder="Type symptoms..." oninput="fetchSuggestions()">
+    <ul id="symptom-suggestions" class="list-group mt-2"></ul>
+    <div id="added-symptoms" class="mt-3"></div>
+  </div>
+
+  <!-- Recommendation Table Section -->
+  <div class="recommendation-section">
+    <h4>Recommendations</h4>
+    <table class="table table-bordered" id="recommendation-table">
+      <thead>
+        <tr>
+          <th>Symptoms</th>
+          <th>Tests</th>
+          <th>Medicines</th>
+          <th>Dozes</th>
+          <th>Suggestions</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Dynamic Rows Here -->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+   
+
+    <!-- Generate Prescription Button -->
+    <div class="text-center mt-4">
+      <button class="btn btn-primary" onclick="generatePDF()">Generate PDF</button>
+    </div>
+  </div>
+
+  <script>
+    const symptomRecommendations = {
+      "Sore throat": {
+        "Tests": ["CBC", "CRP"],
+        "Medicines": [
+          "NAPA EXTEND TAB", 
+          "CEFACLAV 250MG TAB", 
+          "ORYZA MOUTHWASH 120ML"
+        ],
+        "Dosages": [
+          "1+1+1 (3 days)",
+          "1+0+1 (7 days)",
+          "5+0+5"
+        ],
+        "Suggestions": [
+          "Gargle with lukewarm water and salt 5-6 times daily",
+          "Follow up with reports"
+        ]
+      },
+      "Runny nose": {
+        "Tests": ["CBC"],
+        "Medicines": [
+          "BILASTIN 20MG TABLET", 
+          "PURIFEN 400MG TAB"
+        ],
+        "Dosages": [
+          "1+0+1",
+          "1+0+1 (10 days)"
+        ],
+        "Suggestions": [
+          "Avoid cold air exposure",
+          "Use a humidifier to reduce symptoms"
+        ]
+      }
+    };
+
+    let addedSymptoms = [];  // Store added symptoms to update the row
+
+    // Clear suggestions if input is cleared
+    function fetchSuggestions() {
+      const input = document.getElementById("symptom-input").value.trim();
+
+      // Clear the suggestions if input is empty
+      const suggestionList = document.getElementById("symptom-suggestions");
+      suggestionList.innerHTML = "";
+
+      if (input === "") {
+        return;
+      }
+
+      // Suggest symptoms based on input
+      const symptomsArray = input.split(',').map(symptom => symptom.trim().toLowerCase());
+      symptomsArray.forEach(symptom => {
+        const suggestions = Object.keys(symptomRecommendations).filter(s => s.toLowerCase().includes(symptom));
+        suggestions.forEach(s => {
+          const li = document.createElement("li");
+          li.textContent = s;
+          li.className = "list-group-item list-group-item-action";
+          li.onclick = () => addSymptom(s);
+          suggestionList.appendChild(li);
+        });
+      });
+    }
+
+    // Add a symptom to the list of added symptoms
+    function addSymptom(symptom) {
+      // Avoid adding duplicate symptoms
+      if (!addedSymptoms.includes(symptom)) {
+        addedSymptoms.push(symptom);
+        const symptomDisplay = document.createElement("span");
+        symptomDisplay.textContent = symptom;
+        symptomDisplay.className = "badge bg-primary me-2 mb-2";
+        symptomDisplay.onclick = () => removeSymptom(symptom, symptomDisplay);
+        document.getElementById("added-symptoms").appendChild(symptomDisplay);
+        disableSelectedSymptom(symptom); // Disable the selected symptom in the suggestions list
+        updateSymptomsRow(); // Update the symptoms row in the recommendations table
+      }
+    }
+
+    // Disable the selected symptom in the suggestions list
+    function disableSelectedSymptom(symptom) {
+      const suggestionList = document.getElementById("symptom-suggestions");
+      const items = suggestionList.getElementsByTagName("li");
+      for (let item of items) {
+        if (item.textContent.trim() === symptom) {
+          item.style.backgroundColor = "#e0e0e0"; // Grey out the item
+          item.style.pointerEvents = "none";  // Disable clicking
+        }
+      }
+    }
+
+    // Remove a symptom from the list
+    function removeSymptom(symptom, element) {
+      addedSymptoms.splice(addedSymptoms.indexOf(symptom), 1);
+      element.remove();
+      enableAvailableSymptom(symptom); // Re-enable the symptom in the suggestions list
+      updateSymptomsRow(); // Update the symptoms row in the recommendations table
+    }
+
+    // Re-enable the symptom in the suggestions list
+    function enableAvailableSymptom(symptom) {
+      const suggestionList = document.getElementById("symptom-suggestions");
+      const items = suggestionList.getElementsByTagName("li");
+      for (let item of items) {
+        if (item.textContent.trim() === symptom) {
+          item.style.backgroundColor = ""; // Reset background color
+          item.style.pointerEvents = "auto";  // Enable clicking
+        }
+      }
+    }
+
+    // Update symptoms row in the recommendations table
+    function updateSymptomsRow() {
+      const table = document.getElementById("recommendation-table").querySelector("tbody");
+
+      // Check if the row already exists
+      let existingRow = table.querySelector("tr");
+      if (existingRow) {
+        existingRow.remove(); // Remove existing row
+      }
+
+      // Create a new row for symptoms
+      const row = document.createElement("tr");
+
+      // Add symptoms to the row
+      const symptom = addedSymptoms.join(", ");
+      row.innerHTML = `
+        <td>${symptom}</td>
+        <td>
+          <div class="test-row">
+            ${getTestsOptions(addedSymptoms).map(t => `
+              <input type="checkbox" name="tests" value="${t}"> ${t} <br>
+            `).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="medicine-row">
+            ${getMedicinesOptions(addedSymptoms).map(m => `
+              <input type="checkbox" name="medicines" value="${m}"> ${m} <br>
+            `).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="doze-row">
+            ${getDozesOptions(addedSymptoms).map(d => `
+              <input type="checkbox" name="dozes" value="${d}"> ${d} <br>
+            `).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="suggestions-row">
+            ${getSuggestionsOptions(addedSymptoms).map(s => `
+              <input type="checkbox" name="suggestions" value="${s}"> ${s} <br>
+            `).join("")}
+          </div>
+        </td>
+        <td><button class="btn btn-danger btn-sm" onclick="this.parentElement.parentElement.remove()">Remove</button></td>
+      `;
+      table.appendChild(row);
+    }
+
+    // Helper functions to fetch options for Tests, Medicines, Dozes, and Suggestions based on selected symptoms
+    function getTestsOptions(selectedSymptoms) {
+      let options = [];
+      selectedSymptoms.forEach(symptom => {
+        if (symptomRecommendations[symptom]) {
+          options = options.concat(symptomRecommendations[symptom].Tests);
+        }
+      });
+      return [...new Set(options)]; // Return unique options
+    }
+
+    function getMedicinesOptions(selectedSymptoms) {
+      let options = [];
+      selectedSymptoms.forEach(symptom => {
+        if (symptomRecommendations[symptom]) {
+          options = options.concat(symptomRecommendations[symptom].Medicines);
+        }
+      });
+      return [...new Set(options)]; // Return unique options
+    }
+
+    function getDozesOptions(selectedSymptoms) {
+      let options = [];
+      selectedSymptoms.forEach(symptom => {
+        if (symptomRecommendations[symptom]) {
+          options = options.concat(symptomRecommendations[symptom].Dosages);
+        }
+      });
+      return [...new Set(options)]; // Return unique options
+    }
+
+   // Helper functions to fetch options for Suggestions
+function getSuggestionsOptions(selectedSymptoms) {
+  let options = [];
+  selectedSymptoms.forEach(symptom => {
+    if (symptomRecommendations[symptom]) {
+      options = options.concat(symptomRecommendations[symptom].Suggestions);
+    }
+  });
+  return [...new Set(options)]; // Return unique options
+}
+
+// Modify the function that adds the suggestions to the row in the table
+function createNewRow(table) {
+  const row = document.createElement("tr");
+
+  // Add symptoms to the row
+  const symptom = addedSymptoms.join(", ");
+  row.innerHTML = `
+    <td>${symptom}</td>
+    <td>
+      <div class="test-row">
+        ${getTestsOptions(addedSymptoms).map(t => `
+          <input type="checkbox" name="tests" value="${t}"> ${t} <br>
+        `).join("")}
+        <button type="button" class="btn btn-sm btn-secondary mt-2" onclick="addTestRow(this)">Add Test</button>
+      </div>
+    </td>
+    <td>
+      <div class="medicine-row">
+        ${getMedicinesOptions(addedSymptoms).map(m => `
+          <input type="checkbox" name="medicines" value="${m}"> ${m} <br>
+        `).join("")}
+        <button type="button" class="btn btn-sm btn-secondary mt-2" onclick="addMedicineRow(this)">Add Medicine</button>
+      </div>
+    </td>
+    <td>
+      <div class="doze-row">
+        ${getDozesOptions(addedSymptoms).map(d => `
+          <input type="checkbox" name="dozes" value="${d}"> ${d} <br>
+        `).join("")}
+        <button type="button" class="btn btn-sm btn-secondary mt-2" onclick="addDozeRow(this)">Add Doze</button>
+      </div>
+    </td>
+    <td>
+      <div class="suggestions-row">
+        ${getSuggestionsOptions(addedSymptoms).map(s => `
+          <input type="checkbox" name="suggestions" value="${s}"> ${s} <br>
+        `).join("")}
+        <button type="button" class="btn btn-sm btn-secondary mt-2" onclick="addSuggestionRow(this)">Add Suggestion</button>
+      </div>
+    </td>
+    <td><button class="btn btn-danger btn-sm" onclick="this.parentElement.parentElement.remove()">Remove</button></td>
+  `;
+  table.appendChild(row);
+}
+
+// Generate PDF of Prescription
+function generatePDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  // Add Prescription Header
+  doc.setFontSize(14);
+  doc.setFont("Helvetica", "bold");
+  doc.text("Prescription", 105, 20, { align: "center" });
+
+  // Patient Information
+  doc.setFont("Helvetica", "normal");
+  doc.text(`Name: ${document.getElementById("name").value}`, 20, 30);
+  doc.text(`Age: ${document.getElementById("age").value}`, 20, 40);
+  doc.text(`Sex: ${document.getElementById("sex").value}`, 20, 50);
+  doc.text(`Date: ${document.getElementById("date").value}`, 20, 60);
+
+  // Symptoms
+  const symptoms = addedSymptoms.join(", ");
+  doc.text(`Symptoms: ${symptoms || "None"}`, 20, 70);
+
+  // Extract data from the recommendation table
+  const rows = document.querySelectorAll("#recommendation-table tbody tr");
+
+  let yOffset = 80;
+
+  rows.forEach((row) => {
+    const cells = row.querySelectorAll("td");
+
+    // Tests
+    const tests = Array.from(cells[1].querySelectorAll("input:checked"))
+      .map((input) => input.value)
+      .join(", ");
+    doc.text(`Tests: ${tests || "None"}`, 20, yOffset);
+    yOffset += 10;
+// Medicines and Dosages
+const medicines = Array.from(cells[2].querySelectorAll("input:checked")).map(
+  (input) => input.value
+);
+const dosages = Array.from(cells[3].querySelectorAll("input:checked")).map(
+  (input) => input.value
+);
+
+if (medicines.length > 0) {
+  doc.text("Medicines and Dosages:", 20, yOffset);
+  yOffset += 10;
+  
+  // Loop through medicines and dosages
+  medicines.forEach((medicine, index) => {
+    // Ensure we have a matching dosage for each medicine, default to N/A if not available
+    const dosage = dosages[index] || "N/A";
+    doc.text(`- ${medicine} - ${dosage}`, 25, yOffset);
+    yOffset += 10;
+  });
+}
+
+
+    // Suggestions: Display suggestions one by one
+    const suggestions = Array.from(cells[4].querySelectorAll("input:checked"));
+    if (suggestions.length > 0) {
+      doc.text("Suggestions:", 20, yOffset);
+      yOffset += 10;
+      suggestions.forEach((suggestion, index) => {
+        doc.text(`- ${suggestion.value}`, 25, yOffset);
+        yOffset += 10;
+      });
+    }
+
+    // Increment yOffset for next row
+    yOffset += 10;
+  });
+
+  // Save the PDF
+  doc.save("prescription.pdf");
+}
+
+  </script>
+</body>
+</html>
